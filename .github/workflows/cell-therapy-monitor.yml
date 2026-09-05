@@ -1,0 +1,57 @@
+name: Cell & Gene Therapy Monitor
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: cell_therapy_monitor
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - run: pip install -r requirements.txt
+      
+      - env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/cell_therapy_monitor
+        run: python -c "from app.db.database import init_db; init_db()"
+      
+      - env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/cell_therapy_monitor
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
+          RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAIL }}
+          SMTP_SERVER: smtp.gmail.com
+          SMTP_PORT: 587
+          LOG_LEVEL: INFO
+        run: python -m app.main
+      
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitor-logs
+          path: logs/
+          retention-days: 7
